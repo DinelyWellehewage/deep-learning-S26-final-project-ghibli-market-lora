@@ -219,3 +219,9 @@ __marimo__/
 
 
 style_imgs
+
+.venv/
+lora_out/
+samples/
+__pycache__/
+
