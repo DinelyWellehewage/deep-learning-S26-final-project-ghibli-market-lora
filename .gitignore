@@ -224,4 +224,4 @@ style_imgs
 lora_out/
 samples/
 __pycache__/
-
+*.pyc
