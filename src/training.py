@@ -2,9 +2,11 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from pathlib import Path
 
 from src.dataset import StyleImageDataset
 from src.model import create_lora_pipeline, count_trainable_parameters
+from peft import get_peft_model_state_dict
 
 
 def train_lora(
@@ -127,3 +129,18 @@ def train_lora(
     progress_bar.close()
 
     print("Training completed.")
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    unet_lora_state_dict = get_peft_model_state_dict(pipe.unet)
+    text_encoder_lora_state_dict = get_peft_model_state_dict(pipe.text_encoder)
+
+    pipe.save_lora_weights(
+        save_directory=output_path,
+        unet_lora_layers=unet_lora_state_dict,
+        text_encoder_lora_layers=text_encoder_lora_state_dict,
+        safe_serialization=True,
+    )
+
+    print(f"LoRA weights saved to: {output_path / 'pytorch_lora_weights.safetensors'}")
