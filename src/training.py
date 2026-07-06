@@ -7,6 +7,7 @@ from pathlib import Path
 from src.dataset import StyleImageDataset
 from src.model import create_lora_pipeline, count_trainable_parameters
 from peft import get_peft_model_state_dict
+from diffusers.utils import convert_state_dict_to_diffusers
 
 
 def train_lora(
@@ -133,8 +134,18 @@ def train_lora(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    unet_lora_state_dict = get_peft_model_state_dict(pipe.unet)
-    text_encoder_lora_state_dict = get_peft_model_state_dict(pipe.text_encoder)
+    unet_lora_state_dict = convert_state_dict_to_diffusers(
+        get_peft_model_state_dict(pipe.unet)
+    )
+
+    text_encoder_lora_state_dict = convert_state_dict_to_diffusers(
+        get_peft_model_state_dict(pipe.text_encoder)
+    )
+    text_encoder_lora_state_dict = {
+        k: v
+        for k, v in text_encoder_lora_state_dict.items()
+        if "token_embedding" not in k
+    }
 
     pipe.save_lora_weights(
         save_directory=output_path,
