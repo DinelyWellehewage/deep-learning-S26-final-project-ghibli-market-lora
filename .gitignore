@@ -218,7 +218,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 
-style_imgs
+
 
 .venv/
 lora_out/
