@@ -21,6 +21,12 @@ def parse_args():
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--checkpointing_steps",
+        type=int,
+        default=100,
+        help="Save a LoRA checkpoint every N training steps.",
+    )
 
     return parser.parse_args()
 
@@ -37,6 +43,8 @@ def main():
         max_steps=args.max_steps,
         resolution=args.resolution,
         batch_size=args.batch_size,
+        checkpointing_steps=args.checkpointing_steps,
+        overwrite=args.overwrite,
     )
 
 

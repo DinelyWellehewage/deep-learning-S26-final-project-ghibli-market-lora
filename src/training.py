@@ -3,11 +3,41 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from pathlib import Path
-
+import shutil
 from src.dataset import StyleImageDataset
 from src.model import create_lora_pipeline, count_trainable_parameters
 from peft import get_peft_model_state_dict
 from diffusers.utils import convert_state_dict_to_diffusers
+
+def save_lora_checkpoint(pipe, save_directory):
+    save_directory = Path(save_directory)
+    save_directory.mkdir(parents=True, exist_ok=True)
+
+    unet_lora_state_dict = convert_state_dict_to_diffusers(
+        get_peft_model_state_dict(pipe.unet)
+    )
+
+    text_encoder_lora_state_dict = convert_state_dict_to_diffusers(
+        get_peft_model_state_dict(pipe.text_encoder)
+    )
+
+    text_encoder_lora_state_dict = {
+        key: value
+        for key, value in text_encoder_lora_state_dict.items()
+        if "token_embedding" not in key
+    }
+
+    pipe.save_lora_weights(
+        save_directory=save_directory,
+        unet_lora_layers=unet_lora_state_dict,
+        text_encoder_lora_layers=text_encoder_lora_state_dict,
+        safe_serialization=True,
+    )
+
+    print(
+        f"LoRA weights saved to: "
+        f"{save_directory / 'pytorch_lora_weights.safetensors'}"
+    )
 
 
 def train_lora(
@@ -19,6 +49,8 @@ def train_lora(
     max_steps=800,
     resolution=512,
     batch_size=1,
+    checkpointing_steps=100,
+    overwrite=False,
     device=None,
 ):
     if device is None:
@@ -26,16 +58,40 @@ def train_lora(
 
     print("Device:", device)
 
+    # Reproducibility
+    seed = 42
+
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    output_path = Path(output_dir)
+
+    if output_path.exists() and any(output_path.iterdir()):
+        if overwrite:
+            print(f"Removing existing output directory: {output_path}")
+            shutil.rmtree(output_path)
+        else:
+            raise FileExistsError(
+                f"Output directory '{output_path}' already exists and is not empty. "
+                "Use --overwrite to replace it."
+            )
+
     dataset = StyleImageDataset(
         data_dir=data_dir,
         instance_token=instance_token,
         resolution=resolution,
     )
 
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=True,
+        generator=generator,
     )
 
     pipe = create_lora_pipeline(
@@ -50,7 +106,7 @@ def train_lora(
     print("Dataset size:", len(dataset))
     print("Training setup ready.")
 
-        # Prepare optimizer: only LoRA parameters are trainable
+    # Prepare optimizer: only LoRA parameters are trainable
     trainable_params = list(filter(lambda p: p.requires_grad, pipe.unet.parameters()))
     trainable_params += list(filter(lambda p: p.requires_grad, pipe.text_encoder.parameters()))
 
@@ -127,31 +183,23 @@ def train_lora(
             progress_bar.update(1)
             progress_bar.set_postfix(loss=loss.item())
 
+            if (
+                checkpointing_steps is not None
+                and checkpointing_steps > 0
+                and global_step % checkpointing_steps == 0
+            ):
+                checkpoint_dir = output_path / f"checkpoint-{global_step}"
+
+                save_lora_checkpoint(
+                    pipe=pipe,
+                    save_directory=checkpoint_dir,
+                )         
+
     progress_bar.close()
 
     print("Training completed.")
 
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    unet_lora_state_dict = convert_state_dict_to_diffusers(
-        get_peft_model_state_dict(pipe.unet)
-    )
-
-    text_encoder_lora_state_dict = convert_state_dict_to_diffusers(
-        get_peft_model_state_dict(pipe.text_encoder)
-    )
-    text_encoder_lora_state_dict = {
-        k: v
-        for k, v in text_encoder_lora_state_dict.items()
-        if "token_embedding" not in k
-    }
-
-    pipe.save_lora_weights(
+    save_lora_checkpoint(
+        pipe=pipe,
         save_directory=output_path,
-        unet_lora_layers=unet_lora_state_dict,
-        text_encoder_lora_layers=text_encoder_lora_state_dict,
-        safe_serialization=True,
     )
-
-    print(f"LoRA weights saved to: {output_path / 'pytorch_lora_weights.safetensors'}")
