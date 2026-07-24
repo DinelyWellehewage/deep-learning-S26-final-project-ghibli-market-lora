@@ -100,6 +100,11 @@ def train_lora(
         device=device,
     )
 
+    if device == "cuda":
+        pipe.vae.to(dtype=torch.float32)
+        pipe.unet.to(dtype=torch.float32)
+        pipe.text_encoder.to(dtype=torch.float32)
+
     print("Trainable UNet params:", count_trainable_parameters(pipe.unet))
     print("Trainable text encoder params:", count_trainable_parameters(pipe.text_encoder))
 
