@@ -27,7 +27,7 @@ class StyleImageDataset(Dataset):
             )
 
         self.prompt = (
-            f"a busy market, in {self.instance_token} style"
+            f"an illustration in {self.instance_token} style"
         )
 
         self.transform = transforms.Compose(
