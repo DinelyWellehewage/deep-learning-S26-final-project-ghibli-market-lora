@@ -128,7 +128,10 @@ def train_lora(
             if global_step >= max_steps:
                 break
 
-            pixel_values = batch["pixel_values"].to(device)
+            pixel_values = batch["pixel_values"].to(
+                device=device,
+                dtype=pipe.vae.dtype,
+            )
             prompts = batch["prompt"]
 
             # 1. Encode image into latent space
