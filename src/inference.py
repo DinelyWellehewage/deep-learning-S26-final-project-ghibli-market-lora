@@ -49,8 +49,8 @@ def generate_samples(
 
         image = pipe(
             prompt=prompt,
-            num_inference_steps=30,
-            guidance_scale=7.5,
+            num_inference_steps=50,
+            guidance_scale=8.5,
             generator=generator,
         ).images[0]
 
