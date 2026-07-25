@@ -221,7 +221,5 @@ __marimo__/
 
 
 .venv/
-lora_out/
-samples/
 __pycache__/
 *.pyc
