@@ -1,71 +1,50 @@
-# Ghibli Market LoRA
+# Ghibli Market: LoRA Style-Tuning with Stable Diffusion 1.5
 
-This project fine-tunes **Stable Diffusion v1.5** using **Low-Rank Adaptation (LoRA)** to learn a Studio Ghibli-inspired illustration style. The trained LoRA is activated using a custom token (`<sks>`) and can generate market scenes with the learned artistic style.
-
----
-
-## Project Overview
-
-The objective is to adapt a pretrained Stable Diffusion model to a new visual style while training only a small number of parameters using LoRA.
-
-The project includes:
-
-- Custom style token (`<sks>`)
-- LoRA fine-tuning for the UNet and CLIP text encoder
-- Training and evaluation scripts
-- Deterministic inference
-- Checkpoint saving during training
+This project fine-tunes **Stable Diffusion v1.5** using **Low-Rank Adaptation (LoRA)** to generate **Studio Ghibli-inspired market scenes**. A custom style token, `<sks>`, is introduced to enable prompt-based control over the learned artistic style while keeping the original model parameters frozen.
 
 ---
 
-## Dataset
+## Team Members
 
-Training images are located in:
+- Welle Hewage Dinely Shanuka
 
-```
-style_imgs/512/
-```
+---
 
-- Resolution: **512 × 512**
-- Number of images: **843**
-- Caption used for training:
+## Project Structure
 
 ```
-an illustration in <sks> style
+.
+├── code/
+│   ├── train_lora.py
+│   └── eval_lora.py
+├── src/
+│   ├── dataset.py
+│   ├── inference.py
+│   ├── model.py
+│   └── training.py
+├── lora_out/
+│   └── pytorch_lora_weights.safetensors
+├── samples/
+├── style_imgs/
+├── requirements.txt
+├── README.md
+└── report.pdf
 ```
 
 ---
 
-## Installation
+## Requirements
 
-Clone the repository:
+- Python 3.10+
+- PyTorch 2.x
+- CUDA-capable GPU (recommended)
+- Hugging Face Diffusers
+- PEFT
+- Transformers
+- Accelerate
+- Safetensors
 
-```bash
-git clone https://github.com/DinelyWellehewage/deep-learning-S26-final-project-ghibli-market-lora.git
-cd deep-learning-S26-final-project-ghibli-market-lora
-```
-
-Create a virtual environment:
-
-```bash
-python -m venv .venv
-```
-
-Activate it:
-
-Linux/macOS
-
-```bash
-source .venv/bin/activate
-```
-
-Windows
-
-```powershell
-.venv\Scripts\activate
-```
-
-Install dependencies:
+Install the required packages:
 
 ```bash
 pip install -r requirements.txt
@@ -75,115 +54,88 @@ pip install -r requirements.txt
 
 ## Training
 
-Example training command:
+Train the LoRA adapters using:
 
 ```bash
-python scripts/train_lora.py \
-    --data_dir style_imgs/512 \
-    --instance_token "<sks>" \
-    --output_dir outputs/ghibli_lora \
-    --rank 16 \
-    --learning_rate 1e-4 \
-    --max_steps 1600 \
-    --checkpointing_steps 200 \
-    --resolution 512 \
-    --batch_size 1 \
-    --overwrite
+python code/train_lora.py \
+  --data_dir style_imgs/512 \
+  --instance_token "<sks>" \
+  --output_dir lora_out \
+  --rank 16 \
+  --learning_rate 1e-4 \
+  --resolution 512 \
+  --batch_size 1 \
+  --max_steps 1600 \
+  --checkpointing_steps 200 \
+  --overwrite
 ```
 
-Training produces:
+The trained LoRA adapter will be saved as:
 
 ```
-outputs/
-└── ghibli_lora/
-    ├── checkpoint-200/
-    ├── checkpoint-400/
-    ├── ...
-    ├── checkpoint-1600/
-    └── pytorch_lora_weights.safetensors
+lora_out/pytorch_lora_weights.safetensors
 ```
 
 ---
 
 ## Evaluation
 
-Generate images using the trained LoRA:
+Generate sample images using the trained adapter:
 
 ```bash
-python scripts/eval_lora.py \
-    --weights outputs/ghibli_lora/pytorch_lora_weights.safetensors \
-    --prompt "a busy market, in <sks> style" \
-    --outdir outputs/market_samples \
-    --num_images 10 \
-    --seed 42
+python code/eval_lora.py \
+  --weights lora_out/pytorch_lora_weights.safetensors \
+  --prompt "a busy market, in <sks> style" \
+  --outdir samples \
+  --num_images 3 \
+  --seed 42
 ```
 
-Example prompt:
+Generated images will be saved in:
 
 ```
-a busy market, in <sks> style
-```
-
----
-
-## Model
-
-Base model:
-
-- Stable Diffusion v1.5
-
-LoRA configuration:
-
-- Rank: 16
-- UNet LoRA
-- CLIP Text Encoder LoRA
-
----
-
-## Results
-
-The trained LoRA successfully learns a Ghibli-inspired illustration style while preserving prompt content.
-
-Example outputs include:
-
-- Busy outdoor markets
-- Fruit and vegetable stalls
-- Crowded shopping streets
-- Stylized anime-like characters
-
----
-
-## Project Structure
-
-```
-.
-├── scripts/
-│   ├── train_lora.py
-│   └── eval_lora.py
-│
-├── src/
-│   ├── dataset.py
-│   ├── inference.py
-│   ├── model.py
-│   └── training.py
-│
-├── style_imgs/
-├── outputs/
-├── requirements.txt
-└── README.md
+samples/
 ```
 
 ---
 
-## Reproducibility
+## Implementation
 
-Training and inference use fixed random seeds to produce reproducible results whenever possible.
+- Base model: Stable Diffusion v1.5
+- LoRA applied to:
+  - UNet attention layers
+  - CLIP text encoder
+- Custom style token: `<sks>`
+- Dataset: 843 Studio Ghibli-inspired images
+- Image resolution: 512 × 512
+- LoRA rank: 16
 
 ---
 
-## Acknowledgements
+## Runtime
 
-- Hugging Face Diffusers
-- PyTorch
-- Stable Diffusion v1.5
-- LoRA: Low-Rank Adaptation of Large Language Models (Hu et al., 2021)
+The project was trained on an NVIDIA A100 GPU.
+
+Typical training time:
+
+- ~5 minutes for 1600 training steps on an A100 GPU.
+
+---
+
+## Deliverables
+
+- `code/train_lora.py`
+- `code/eval_lora.py`
+- `lora_out/pytorch_lora_weights.safetensors`
+- `samples/`
+- `requirements.txt`
+- `README.md`
+- `report.pdf`
+
+---
+
+## References
+
+- Hugging Face Diffusers: https://huggingface.co/docs/diffusers
+- PEFT: https://github.com/huggingface/peft
+- LoRA: Hu et al., 2021. https://arxiv.org/abs/2106.09685
