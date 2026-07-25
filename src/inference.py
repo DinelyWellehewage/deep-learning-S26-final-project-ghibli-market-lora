@@ -15,6 +15,12 @@ def generate_samples(
     seed=42,
     instance_token="<sks>",
 ):
+
+    weights = Path(weights)
+
+    if not weights.exists():
+        raise FileNotFoundError(f"LoRA weights not found: {weights}")    
+    
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
