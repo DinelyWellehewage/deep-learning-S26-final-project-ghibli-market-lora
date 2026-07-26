@@ -2,17 +2,20 @@ import argparse
 import sys
 from pathlib import Path
 
+
+# Add the project root to Python's import path so that imports from
+# the src package work when this file is run directly.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.inference import generate_samples
 
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
             "Generate images using trained UNet LoRA, "
-            "text-encoder LoRA, and learned <sks> "
-            "embedding weights."
+            "text-encoder LoRA, and a learned style-token embedding."
         )
     )
 
@@ -21,8 +24,8 @@ def parse_args():
         type=str,
         required=True,
         help=(
-            "Path to "
-            "pytorch_lora_weights.safetensors."
+            "Path to the combined "
+            "pytorch_lora_weights.safetensors checkpoint."
         ),
     )
 
@@ -51,14 +54,17 @@ def parse_args():
         "--seed",
         type=int,
         default=42,
-        help="Base random seed.",
+        help="Base random seed used for image generation.",
     )
 
     parser.add_argument(
         "--instance_token",
         type=str,
         default="<sks>",
-        help="Custom style token.",
+        help=(
+            "Custom style token used during training. "
+            "This must match the token used with train_lora.py."
+        ),
     )
 
     parser.add_argument(
@@ -67,8 +73,7 @@ def parse_args():
         default=None,
         choices=["cpu", "cuda"],
         help=(
-            "Inference device. Automatically selected "
-            "when omitted."
+            "Inference device. If omitted, CUDA is used when available."
         ),
     )
 

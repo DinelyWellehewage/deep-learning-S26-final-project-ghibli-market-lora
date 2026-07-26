@@ -183,32 +183,39 @@ def generate_samples(
 
     pipe = pipe.to(device)
 
+    # Explicitly place all inference components in evaluation mode.
+    pipe.unet.eval()
+    pipe.text_encoder.eval()
+    pipe.vae.eval()
+
     pipe.set_progress_bar_config(
         desc="Generating"
     )
 
-    for index in range(num_images):
-        image_seed = seed + index
+    # Disable gradient tracking during image generation.
+    with torch.inference_mode():
+        for index in range(num_images):
+            image_seed = seed + index
 
-        generator = torch.Generator(
-            device=device
-        ).manual_seed(image_seed)
+            generator = torch.Generator(
+                device=device
+            ).manual_seed(image_seed)
 
-        image = pipe(
-            prompt=prompt,
-            num_inference_steps=50,
-            guidance_scale=7.5,
-            generator=generator,
-        ).images[0]
+            image = pipe(
+                prompt=prompt,
+                num_inference_steps=50,
+                guidance_scale=7.5,
+                generator=generator,
+            ).images[0]
 
-        output_path = (
-            outdir
-            / f"sample_{index + 1}.png"
-        )
+            output_path = (
+                outdir
+                / f"sample_{index + 1}.png"
+            )
 
-        image.save(output_path)
+            image.save(output_path)
 
-        print(
-            f"Saved: {output_path} "
-            f"(seed={image_seed})"
-        )
+            print(
+                f"Saved: {output_path} "
+                f"(seed={image_seed})"
+            )

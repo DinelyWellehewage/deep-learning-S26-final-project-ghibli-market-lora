@@ -191,13 +191,12 @@ Approximate runtime:
 
 ## Reproducibility
 
-The implementation uses:
+Training and evaluation use fixed random seeds to improve reproducibility.
 
-- Stable Diffusion v1.5
-- Fixed random seed (42)
-- SafeTensors checkpoints
-- Deterministic evaluation prompt
-- Command-line interface for both training and evaluation
+The training script seeds PyTorch, CUDA, and DataLoader shuffling. The evaluation
+script uses a fixed generator seed for image generation. However, GPU execution
+may still produce small run-to-run differences because some CUDA operations are
+not guaranteed to be exactly deterministic.
 
 ---
 
