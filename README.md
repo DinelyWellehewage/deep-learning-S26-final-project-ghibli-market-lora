@@ -1,31 +1,62 @@
-# Ghibli Market: LoRA Style-Tuning with Stable Diffusion 1.5
+# Ghibli Market: LoRA Style-Tuning with Stable Diffusion v1.5
 
-This project fine-tunes **Stable Diffusion v1.5** using **Low-Rank Adaptation (LoRA)** to generate **Studio Ghibli-inspired market scenes**. A custom style token, `<sks>`, is introduced to enable prompt-based control over the learned artistic style while keeping the original model parameters frozen.
+This project fine-tunes **Stable Diffusion v1.5** using **Low-Rank Adaptation (LoRA)** to generate **Studio Ghibli-inspired market scenes**. A custom style token, `<sks>`, is introduced to enable prompt-based control over the learned artistic style while keeping the original Stable Diffusion parameters frozen. LoRA adapters are applied to both the **UNet** and the **CLIP text encoder**, satisfying the assignment requirements.
 
 ---
 
 ## Team Members
 
 - Welle Hewage Dinely Shanuka
+- Mahalakshmi Jayaraman
+- Sandeep Das
+
+---
+
+## Overview
+
+The project implements a complete LoRA fine-tuning pipeline using the Hugging Face Diffusers library. Instead of updating all Stable Diffusion parameters, lightweight LoRA adapters are trained while the original model remains frozen, making the approach computationally efficient.
+
+The trained model learns a Ghibli-inspired artistic style from a dataset of **843 images** and generates stylized market scenes from the prompt:
+
+```text
+a busy market, in <sks> style
+```
+
+---
+
+## Features
+
+- Stable Diffusion v1.5
+- Dual-adapter LoRA fine-tuning
+  - UNet
+  - CLIP Text Encoder
+- Custom style token (`<sks>`)
+- Parameter-efficient training
+- SafeTensors checkpoint export
+- Reproducible training with fixed random seed
+- Command-line training and evaluation scripts
 
 ---
 
 ## Project Structure
 
-```
+```text
 .
 ├── code/
-│   ├── train_lora.py
-│   └── eval_lora.py
+│   ├── train_lora.py          # Training entry point
+│   └── eval_lora.py           # Evaluation script
+│
 ├── src/
-│   ├── dataset.py
-│   ├── inference.py
-│   ├── model.py
-│   └── training.py
+│   ├── dataset.py             # Dataset loader
+│   ├── inference.py           # Image generation
+│   ├── model.py               # Stable Diffusion + LoRA setup
+│   └── training.py            # Training pipeline
+│
 ├── lora_out/
 │   └── pytorch_lora_weights.safetensors
-├── samples/
-├── style_imgs/
+│
+├── samples/                   # Generated sample images
+├── style_imgs/                # Training dataset
 ├── requirements.txt
 ├── README.md
 └── report.pdf
@@ -70,9 +101,9 @@ python code/train_lora.py \
   --overwrite
 ```
 
-The trained LoRA adapter will be saved as:
+The trained LoRA adapter is saved as
 
-```
+```text
 lora_out/pytorch_lora_weights.safetensors
 ```
 
@@ -80,7 +111,7 @@ lora_out/pytorch_lora_weights.safetensors
 
 ## Evaluation
 
-Generate sample images using the trained adapter:
+Generate images using the trained adapter:
 
 ```bash
 python code/eval_lora.py \
@@ -91,38 +122,104 @@ python code/eval_lora.py \
   --seed 42
 ```
 
-Generated images will be saved in:
+Generated images are saved in
 
-```
+```text
 samples/
 ```
 
 ---
 
-## Implementation
+## Training Configuration
 
-- Base model: Stable Diffusion v1.5
-- LoRA applied to:
-  - UNet attention layers
-  - CLIP text encoder
-- Custom style token: `<sks>`
-- Dataset: 843 Studio Ghibli-inspired images
-- Image resolution: 512 × 512
-- LoRA rank: 16
+| Parameter | Value |
+|-----------|------:|
+| Base model | Stable Diffusion v1.5 |
+| Dataset | 843 images |
+| Resolution | 512 × 512 |
+| Style token | `<sks>` |
+| LoRA rank | 16 |
+| Learning rate | 1e-4 |
+| Batch size | 1 |
+| Training steps | 1600 |
+| Checkpoint interval | 200 |
+| Random seed | 42 |
+
+---
+
+## Implementation Details
+
+### LoRA Target Modules
+
+**UNet**
+
+- `to_q`
+- `to_k`
+- `to_v`
+- `to_out.0`
+
+**CLIP Text Encoder**
+
+- `q_proj`
+- `k_proj`
+- `v_proj`
+- `out_proj`
+
+### Training Procedure
+
+1. Load Stable Diffusion v1.5.
+2. Add the custom token `<sks>` to the tokenizer.
+3. Initialize the new token from the existing `"style"` embedding.
+4. Freeze the original Stable Diffusion parameters.
+5. Attach LoRA adapters to both the UNet and CLIP text encoder.
+6. Train the LoRA parameters using diffusion noise-prediction loss.
+7. Save the trained adapters as a single SafeTensors checkpoint.
 
 ---
 
 ## Runtime
 
-The project was trained on an NVIDIA A100 GPU.
+Training was performed on an **NVIDIA A100 GPU**.
 
-Typical training time:
+Approximate runtime:
 
-- ~5 minutes for 1600 training steps on an A100 GPU.
+| Task | Runtime |
+|------|---------|
+| Training (1600 steps) | ~5 minutes |
+| Evaluation (3 images) | ~10 seconds |
 
 ---
 
+## Reproducibility
+
+The implementation uses:
+
+- Stable Diffusion v1.5
+- Fixed random seed (42)
+- SafeTensors checkpoints
+- Deterministic evaluation prompt
+- Command-line interface for both training and evaluation
+
+---
+
+---
+
+## Sample Result
+
+The figure below shows a representative image generated by the trained LoRA model using the prompt:
+
+```text
+a busy market, in <sks> style
+```
+
+<p align="center">
+  <img src="samples/sample_5.png" alt="Generated Ghibli market scene" width="450">
+</p>
+
+
 ## Deliverables
+
+The final submission contains:
 
 - `code/train_lora.py`
 - `code/eval_lora.py`
@@ -136,6 +233,6 @@ Typical training time:
 
 ## References
 
-- Hugging Face Diffusers: https://huggingface.co/docs/diffusers
-- PEFT: https://github.com/huggingface/peft
-- LoRA: Hu et al., 2021. https://arxiv.org/abs/2106.09685
+- Hu, E. J., et al. (2021). **LoRA: Low-Rank Adaptation of Large Language Models.** https://arxiv.org/abs/2106.09685
+- Hugging Face Diffusers Documentation: https://huggingface.co/docs/diffusers
+- PEFT Documentation: https://github.com/huggingface/peft
