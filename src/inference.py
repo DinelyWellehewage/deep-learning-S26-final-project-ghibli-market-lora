@@ -20,8 +20,9 @@ def load_combined_checkpoint(
     Load the learned custom-token embedding and LoRA tensors from the
     same SafeTensors file.
 
-    The custom embedding key is removed before the remaining LoRA state
-    dictionary is passed to Diffusers.
+    The checkpoint may also contain full embedding-layer tensors inserted
+    automatically by PEFT because the tokenizer was resized. Those tensors
+    are excluded before passing the state dictionary to Diffusers.
     """
 
     weights = Path(weights)
@@ -31,10 +32,7 @@ def load_combined_checkpoint(
         device="cpu",
     )
 
-    if (
-        TOKEN_EMBEDDING_KEY
-        not in combined_state_dict
-    ):
+    if TOKEN_EMBEDDING_KEY not in combined_state_dict:
         raise KeyError(
             f"The checkpoint does not contain "
             f"'{TOKEN_EMBEDDING_KEY}'. "
@@ -42,10 +40,9 @@ def load_combined_checkpoint(
             "embedding support enabled."
         )
 
-    learned_embedding = (
-        combined_state_dict.pop(
-            TOKEN_EMBEDDING_KEY
-        )
+    # Remove the custom embedding from the combined dictionary.
+    learned_embedding = combined_state_dict.pop(
+        TOKEN_EMBEDDING_KEY
     )
 
     embedding_weight = (
@@ -54,21 +51,18 @@ def load_combined_checkpoint(
         .weight
     )
 
-    expected_shape = (
-        embedding_weight[
-            instance_token_id
-        ].shape
-    )
+    expected_shape = embedding_weight[
+        instance_token_id
+    ].shape
 
     if learned_embedding.shape != expected_shape:
         raise ValueError(
             "Style-token embedding shape mismatch. "
             f"Expected {tuple(expected_shape)}, "
-            f"received "
-            f"{tuple(learned_embedding.shape)}."
+            f"received {tuple(learned_embedding.shape)}."
         )
 
-    # Replace the initializer embedding with the learned embedding.
+    # Replace the initial <sks> embedding with the learned embedding.
     with torch.no_grad():
         embedding_weight[
             instance_token_id
@@ -79,15 +73,40 @@ def load_combined_checkpoint(
             )
         )
 
-    if not combined_state_dict:
+    # PEFT may save full embedding-layer tensors when the tokenizer has
+    # been resized. Diffusers load_lora_weights() must receive only LoRA
+    # tensors, so retain only LoRA and DoRA-related entries.
+    lora_state_dict = {
+        key: value
+        for key, value in combined_state_dict.items()
+        if "lora" in key.lower()
+        or "dora_scale" in key.lower()
+    }
+
+    if not lora_state_dict:
+        available_keys = list(
+            combined_state_dict.keys()
+        )[:20]
+
         raise ValueError(
-            "The checkpoint contains the style-token "
-            "embedding but no LoRA tensors."
+            "No LoRA tensors were found in the checkpoint. "
+            f"First available keys: {available_keys}"
         )
 
-    # Load only the remaining UNet and text-encoder LoRA tensors.
+    removed_keys = (
+        len(combined_state_dict)
+        - len(lora_state_dict)
+    )
+
+    if removed_keys > 0:
+        print(
+            f"Ignored {removed_keys} non-LoRA tensor(s) "
+            "automatically stored by PEFT."
+        )
+
+    # Load only valid UNet and text-encoder LoRA tensors.
     pipe.load_lora_weights(
-        combined_state_dict
+        lora_state_dict
     )
 
     print(
@@ -96,8 +115,8 @@ def load_combined_checkpoint(
     )
 
     print(
-        f"Loaded UNet and text-encoder LoRA "
-        f"weights from: {weights}"
+        f"Loaded {len(lora_state_dict)} UNet and "
+        f"text-encoder LoRA tensors from: {weights}"
     )
 
 
@@ -133,7 +152,6 @@ def generate_samples(
     print("Device:", device)
 
     outdir = Path(outdir)
-
     outdir.mkdir(
         parents=True,
         exist_ok=True,
@@ -148,8 +166,7 @@ def generate_samples(
         ),
     )
 
-    # Add the token and resize the embedding table before loading the
-    # learned embedding.
+    # Add <sks> and resize the text-encoder embedding table.
     instance_token_id = add_style_token(
         tokenizer=pipe.tokenizer,
         text_encoder=pipe.text_encoder,
@@ -157,7 +174,7 @@ def generate_samples(
         initializer_token="style",
     )
 
-    # Load the token embedding and both LoRA adapters from one file.
+    # Load the learned embedding and both LoRA adapters.
     load_combined_checkpoint(
         pipe=pipe,
         weights=weights,
