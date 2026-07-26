@@ -97,7 +97,6 @@ python code/train_lora.py \
   --resolution 512 \
   --batch_size 1 \
   --max_steps 1600 \
-  --checkpointing_steps 200 \
   --overwrite
 ```
 
