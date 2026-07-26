@@ -6,9 +6,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from diffusers.utils import (
-    convert_state_dict_to_diffusers,
-)
+from diffusers.utils import convert_state_dict_to_diffusers
 from peft import get_peft_model_state_dict
 from safetensors.torch import load_file, save_file
 
@@ -27,11 +25,13 @@ def save_lora_checkpoint(
     instance_token_id,
 ):
     """
-    Save the UNet LoRA weights, text-encoder LoRA weights, and learned
-    custom token embedding in exactly one SafeTensors file.
+    Save one SafeTensors checkpoint containing:
 
-    Output:
-        pytorch_lora_weights.safetensors
+    1. UNet LoRA tensors
+    2. Text-encoder LoRA tensors
+    3. One learned custom-token embedding row
+
+    The complete CLIP token-embedding matrix is excluded.
     """
 
     save_directory = Path(save_directory)
@@ -40,6 +40,7 @@ def save_lora_checkpoint(
         exist_ok=True,
     )
 
+    # Extract and convert the UNet LoRA tensors.
     unet_lora_state_dict = (
         convert_state_dict_to_diffusers(
             get_peft_model_state_dict(
@@ -48,15 +49,66 @@ def save_lora_checkpoint(
         )
     )
 
-    text_encoder_lora_state_dict = (
-        convert_state_dict_to_diffusers(
-            get_peft_model_state_dict(
-                pipe.text_encoder
-            )
+    # Extract the text-encoder PEFT state dictionary.
+    text_encoder_peft_state_dict = (
+        get_peft_model_state_dict(
+            pipe.text_encoder
         )
     )
 
-    # Save the standard Diffusers LoRA checkpoint first.
+    full_embedding_shape = tuple(
+        pipe.text_encoder
+        .get_input_embeddings()
+        .weight.shape
+    )
+
+    embedding_key_terms = (
+        "token_embedding",
+        "embed_tokens",
+        "word_embeddings",
+        "embeddings.weight",
+    )
+
+    filtered_text_encoder_state_dict = {}
+
+    for key, value in (
+        text_encoder_peft_state_dict.items()
+    ):
+        key_lower = key.lower()
+
+        is_embedding_key = any(
+            term in key_lower
+            for term in embedding_key_terms
+        )
+
+        is_full_embedding_tensor = (
+            value.ndim == 2
+            and tuple(value.shape)
+            == full_embedding_shape
+        )
+
+        if (
+            is_embedding_key
+            or is_full_embedding_tensor
+        ):
+            print(
+                "Excluded non-LoRA text-encoder "
+                f"tensor: {key}, "
+                f"shape={tuple(value.shape)}"
+            )
+            continue
+
+        filtered_text_encoder_state_dict[
+            key
+        ] = value
+
+    text_encoder_lora_state_dict = (
+        convert_state_dict_to_diffusers(
+            filtered_text_encoder_state_dict
+        )
+    )
+
+    # Let Diffusers produce the correct LoRA key format.
     pipe.save_lora_weights(
         save_directory=save_directory,
         unet_lora_layers=unet_lora_state_dict,
@@ -77,13 +129,40 @@ def save_lora_checkpoint(
             f"checkpoint file: {weights_path}"
         )
 
-    # Reopen the standard LoRA checkpoint.
     combined_state_dict = load_file(
         str(weights_path),
         device="cpu",
     )
 
-    # Extract only the learned custom-token row.
+    forbidden_keys = []
+
+    for key, value in combined_state_dict.items():
+        key_lower = key.lower()
+
+        is_embedding_key = any(
+            term in key_lower
+            for term in embedding_key_terms
+        )
+
+        is_full_embedding_tensor = (
+            value.ndim == 2
+            and tuple(value.shape)
+            == full_embedding_shape
+        )
+
+        if (
+            is_embedding_key
+            or is_full_embedding_tensor
+        ):
+            forbidden_keys.append(key)
+
+    if forbidden_keys:
+        raise RuntimeError(
+            "The serialized checkpoint still contains "
+            "a complete token-embedding tensor:\n"
+            + "\n".join(forbidden_keys)
+        )
+
     learned_embedding = (
         pipe.text_encoder
         .get_input_embeddings()
@@ -91,9 +170,25 @@ def save_lora_checkpoint(
         .detach()
         .cpu()
         .clone()
+        .contiguous()
     )
 
-    # Store it in the same state dictionary as the LoRA tensors.
+    if learned_embedding.ndim != 1:
+        raise ValueError(
+            "Expected a one-dimensional custom-token "
+            "embedding, but received shape "
+            f"{tuple(learned_embedding.shape)}."
+        )
+
+    expected_width = full_embedding_shape[1]
+
+    if learned_embedding.shape[0] != expected_width:
+        raise ValueError(
+            "Unexpected custom-token embedding size. "
+            f"Expected {expected_width}, but received "
+            f"{learned_embedding.shape[0]}."
+        )
+
     combined_state_dict[
         TOKEN_EMBEDDING_KEY
     ] = learned_embedding
@@ -103,7 +198,6 @@ def save_lora_checkpoint(
         / "pytorch_lora_weights.tmp.safetensors"
     )
 
-    # Save to a temporary path first, then replace the original file.
     save_file(
         combined_state_dict,
         str(temporary_path),
@@ -120,11 +214,14 @@ def save_lora_checkpoint(
     print(
         f"Checkpoint saved to: {weights_path}"
     )
-
     print(
         f"Included learned embedding for "
         f"{instance_token} under key "
         f"'{TOKEN_EMBEDDING_KEY}'."
+    )
+    print(
+        "Saved tensors:",
+        len(combined_state_dict),
     )
 
 
@@ -211,7 +308,7 @@ def train_lora(
             "but the embedding parameter was not enabled."
         )
 
-    # Use float32 during training for better numerical stability.
+    # Use float32 during training for numerical stability.
     if device == "cuda":
         pipe.vae.to(dtype=torch.float32)
         pipe.unet.to(dtype=torch.float32)
@@ -225,9 +322,13 @@ def train_lora(
 
     text_encoder_lora_params = [
         parameter
-        for parameter in pipe.text_encoder.parameters()
-        if parameter.requires_grad
-        and parameter is not token_embedding_weight
+        for parameter
+        in pipe.text_encoder.parameters()
+        if (
+            parameter.requires_grad
+            and parameter
+            is not token_embedding_weight
+        )
     ]
 
     unet_lora_count = count_lora_parameters(
@@ -243,7 +344,7 @@ def train_lora(
         )
     )
 
-    # Only one embedding row is effectively trained.
+    # Only one token-embedding row is effectively trained.
     token_embedding_count = (
         token_embedding_weight.shape[1]
     )
@@ -397,7 +498,7 @@ def train_lora(
                 noise.float(),
             )
 
-            # 9. Update LoRA parameters and only the <sks> row.
+            # 9. Update LoRA parameters and the <sks> row.
             optimizer.zero_grad(
                 set_to_none=True
             )
@@ -444,3 +545,4 @@ def train_lora(
         instance_token=instance_token,
         instance_token_id=instance_token_id,
     )
+    
