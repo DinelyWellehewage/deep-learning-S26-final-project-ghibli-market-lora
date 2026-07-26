@@ -35,7 +35,6 @@ def save_lora_checkpoint(
     """
 
     save_directory = Path(save_directory)
-
     save_directory.mkdir(
         parents=True,
         exist_ok=True,
