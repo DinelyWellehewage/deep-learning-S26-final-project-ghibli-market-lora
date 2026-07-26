@@ -6,7 +6,7 @@ This project fine-tunes **Stable Diffusion v1.5** using **Low-Rank Adaptation (L
 
 ## Team Members
 
-- Welle Hewage Dinely Shanuka
+- Dinely Shanuka Welle Hewage 
 - Mahalakshmi Jayaraman
 - Sandeep Das
 
@@ -191,15 +191,12 @@ Approximate runtime:
 
 ## Reproducibility
 
-The implementation uses:
+Training and evaluation use fixed random seeds to improve reproducibility.
 
-- Stable Diffusion v1.5
-- Fixed random seed (42)
-- SafeTensors checkpoints
-- Deterministic evaluation prompt
-- Command-line interface for both training and evaluation
-
----
+The training script seeds PyTorch, CUDA, and DataLoader shuffling. The evaluation
+script uses a fixed generator seed for image generation. However, GPU execution
+may still produce small run-to-run differences because some CUDA operations are
+not guaranteed to be exactly deterministic.
 
 ---
 
@@ -212,7 +209,7 @@ a busy market, in <sks> style
 ```
 
 <p align="center">
-  <img src="samples/sample_5.png" alt="Generated Ghibli market scene" width="450">
+  <img src="samples/sample_1.png" alt="Generated Ghibli market scene" width="450">
 </p>
 
 

@@ -27,16 +27,23 @@ class StyleImageDataset(Dataset):
             )
 
         self.prompt = (
-            f"an illustration in {self.instance_token} style"
+            f"an illustration in "
+            f"{self.instance_token} style"
         )
 
         self.transform = transforms.Compose(
             [
                 transforms.Resize(
                     resolution,
-                    interpolation=transforms.InterpolationMode.BILINEAR,
+                    interpolation=(
+                        transforms
+                        .InterpolationMode
+                        .BILINEAR
+                    ),
                 ),
-                transforms.CenterCrop(resolution),
+                transforms.CenterCrop(
+                    resolution
+                ),
                 transforms.ToTensor(),
                 transforms.Normalize(
                     mean=[0.5, 0.5, 0.5],

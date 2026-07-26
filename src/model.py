@@ -5,6 +5,10 @@ from peft import LoraConfig
 
 MODEL_NAME = "runwayml/stable-diffusion-v1-5"
 
+# Custom key used to store the learned <sks> embedding inside the same
+# SafeTensors file as the UNet and text-encoder LoRA weights.
+TOKEN_EMBEDDING_KEY = "sks_token_embedding"
+
 
 def add_style_token(
     tokenizer,
@@ -13,13 +17,14 @@ def add_style_token(
     initializer_token="style",
 ):
     """
-    Add a custom style token and initialize it from an existing token.
+    Add a custom style token and initialize its embedding from an
+    existing single-token embedding.
 
-    The same function must be used during training and evaluation so that
-    <sks> has the same token ID and initial embedding in both pipelines.
+    This function is used during both training and inference. During
+    inference, the initialized vector is replaced by the learned embedding
+    stored in the checkpoint.
     """
 
-    # Add the new token to the tokenizer.
     num_added_tokens = tokenizer.add_tokens([instance_token])
 
     if num_added_tokens != 1:
@@ -28,12 +33,13 @@ def add_style_token(
             "The token may already exist in the tokenizer."
         )
 
-    # Expand the text encoder embedding table for the new token.
+    # Expand the text-encoder embedding table for the new token.
     text_encoder.resize_token_embeddings(len(tokenizer))
 
-    instance_token_id = tokenizer.convert_tokens_to_ids(instance_token)
+    instance_token_id = tokenizer.convert_tokens_to_ids(
+        instance_token
+    )
 
-    # Obtain the token ID used to initialize <sks>.
     initializer_token_ids = tokenizer.encode(
         initializer_token,
         add_special_tokens=False,
@@ -48,51 +54,100 @@ def add_style_token(
 
     initializer_token_id = initializer_token_ids[0]
 
-    # Copy the existing "style" embedding into the new <sks> embedding.
+    # Initialize <sks> from the existing "style" embedding.
     with torch.no_grad():
-        embeddings = text_encoder.get_input_embeddings().weight
+        embedding_weight = (
+            text_encoder.get_input_embeddings().weight
+        )
 
-        embeddings[instance_token_id].copy_(
-            embeddings[initializer_token_id]
+        embedding_weight[instance_token_id].copy_(
+            embedding_weight[initializer_token_id]
         )
 
     print(
-        f"Added {instance_token} with token ID {instance_token_id}. "
-        f"Initialized from '{initializer_token}' "
+        f"Added {instance_token} with token ID "
+        f"{instance_token_id}. Initialized from "
+        f"'{initializer_token}' "
         f"(token ID {initializer_token_id})."
     )
 
     return instance_token_id
 
 
+def enable_style_token_training(
+    text_encoder,
+    instance_token_id,
+):
+    """
+    Enable gradient updates for the embedding matrix while masking all
+    rows except the custom style-token row.
+
+    The returned parameter must be placed in an optimizer parameter group
+    with weight_decay=0.0. Otherwise AdamW could modify the other rows
+    through decoupled weight decay.
+    """
+
+    embedding_weight = (
+        text_encoder.get_input_embeddings().weight
+    )
+
+    embedding_weight.requires_grad_(True)
+
+    def mask_embedding_gradients(gradient):
+        masked_gradient = torch.zeros_like(gradient)
+
+        masked_gradient[instance_token_id].copy_(
+            gradient[instance_token_id]
+        )
+
+        return masked_gradient
+
+    embedding_weight.register_hook(
+        mask_embedding_gradients
+    )
+
+    return embedding_weight
+
+
 def create_lora_pipeline(
     instance_token="<sks>",
     rank=8,
     device="cpu",
+    train_style_token=False,
 ):
+    """
+    Load Stable Diffusion v1.5 and attach LoRA adapters to both the
+    UNet and CLIP text encoder.
+
+    When train_style_token=True, the custom token embedding is also enabled
+    for masked single-row training.
+    """
+
     pipe = StableDiffusionPipeline.from_pretrained(
         MODEL_NAME,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        torch_dtype=(
+            torch.float16
+            if device == "cuda"
+            else torch.float32
+        ),
     )
 
     tokenizer = pipe.tokenizer
     text_encoder = pipe.text_encoder
     unet = pipe.unet
 
-    # Add and initialize the custom style token.
-    add_style_token(
+    instance_token_id = add_style_token(
         tokenizer=tokenizer,
         text_encoder=text_encoder,
         instance_token=instance_token,
         initializer_token="style",
     )
 
-    # Freeze the original Stable Diffusion model parameters.
+    # Freeze all original model parameters.
     unet.requires_grad_(False)
     text_encoder.requires_grad_(False)
     pipe.vae.requires_grad_(False)
 
-    # LoRA configuration for the UNet.
     unet_lora_config = LoraConfig(
         r=rank,
         lora_alpha=rank,
@@ -105,7 +160,6 @@ def create_lora_pipeline(
         ],
     )
 
-    # LoRA configuration for the text encoder.
     text_encoder_lora_config = LoraConfig(
         r=rank,
         lora_alpha=rank,
@@ -118,18 +172,48 @@ def create_lora_pipeline(
         ],
     )
 
-    # Attach both LoRA adapters.
+    # Attach LoRA adapters after the base model has been frozen.
     unet.add_adapter(unet_lora_config)
-    text_encoder.add_adapter(text_encoder_lora_config)
+
+    text_encoder.add_adapter(
+        text_encoder_lora_config
+    )
+
+    token_embedding_weight = None
+
+    # This must happen after text_encoder.requires_grad_(False).
+    if train_style_token:
+        token_embedding_weight = (
+            enable_style_token_training(
+                text_encoder=text_encoder,
+                instance_token_id=instance_token_id,
+            )
+        )
 
     pipe = pipe.to(device)
 
-    return pipe
+    return (
+        pipe,
+        instance_token_id,
+        token_embedding_weight,
+    )
 
 
-def count_trainable_parameters(model):
+def count_lora_parameters(
+    model,
+    excluded_parameter=None,
+):
+    """
+    Count trainable LoRA parameters while optionally excluding the
+    token-embedding matrix.
+
+    The complete embedding matrix has requires_grad=True, but only one row
+    is effectively trained because of the gradient mask.
+    """
+
     return sum(
         parameter.numel()
         for parameter in model.parameters()
         if parameter.requires_grad
+        and parameter is not excluded_parameter
     )
