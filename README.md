@@ -95,7 +95,6 @@ python code/train_lora.py \
   --rank 16 \
   --learning_rate 1e-4 \
   --max_steps 1600 \
-  --checkpointing_steps 200 \
   --resolution 512 \
   --batch_size 1 \
   --overwrite
