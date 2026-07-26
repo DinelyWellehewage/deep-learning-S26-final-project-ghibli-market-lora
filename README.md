@@ -209,7 +209,7 @@ a busy market, in <sks> style
 ```
 
 <p align="center">
-  <img src="samples/sample_5.png" alt="Generated Ghibli market scene" width="450">
+  <img src="samples/sample_1.png" alt="Generated Ghibli market scene" width="450">
 </p>
 
 
