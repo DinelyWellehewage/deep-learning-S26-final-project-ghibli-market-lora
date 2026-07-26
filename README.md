@@ -233,3 +233,9 @@ The final submission contains:
 - Hu, E. J., et al. (2021). **LoRA: Low-Rank Adaptation of Large Language Models.** https://arxiv.org/abs/2106.09685
 - Hugging Face Diffusers Documentation: https://huggingface.co/docs/diffusers
 - PEFT Documentation: https://github.com/huggingface/peft
+
+
+## Repository
+
+GitHub Repository:
+https://github.com/DinelyWellehewage/deep-learning-S26-final-project-ghibli-market-lora
