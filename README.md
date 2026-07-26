@@ -6,7 +6,7 @@ This project fine-tunes **Stable Diffusion v1.5** using **Low-Rank Adaptation (L
 
 ## Team Members
 
-- Welle Hewage Dinely Shanuka
+- Dinely Shanuka Welle Hewage 
 - Mahalakshmi Jayaraman
 - Sandeep Das
 

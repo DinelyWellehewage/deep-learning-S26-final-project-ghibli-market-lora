@@ -138,7 +138,7 @@ def train_lora(
     max_steps=800,
     resolution=512,
     batch_size=1,
-    checkpointing_steps=100,
+    checkpointing_steps=200,
     overwrite=False,
     device=None,
 ):
